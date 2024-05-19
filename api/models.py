@@ -129,6 +129,10 @@ class UserRequest(models.Model):
         verbose_name_plural = "Requests"
         ordering = ["woffu_user", "-init_date"]
 
+    def clean(self):
+        if self.init_date > self.end_date:
+            raise ValueError("The initial date must be less than the end date.")
+
     def __str__(self):
         return f"{self.woffu_user} - {self.init_date}/{self.end_date}"
 

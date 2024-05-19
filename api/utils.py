@@ -140,7 +140,7 @@ def get_users_requests(company: Company) -> bool:
 
 
 @check_valid_token
-def get_user_request(woffu_user: WoffuUser, to_date: datetime.date = None) -> None:
+def get_user_request(woffu_user: WoffuUser, to_date: datetime.date = None) -> bool:
     """
     Retrieves user requests from the Woffu API and updates the database accordingly.
 
@@ -189,10 +189,13 @@ def get_user_request(woffu_user: WoffuUser, to_date: datetime.date = None) -> No
                         init_date=init_date, end_date=end_date,
                     )
         woffu_user.updated_at = datetime.datetime.now().date()
+        woffu_user.save()
+        return True
     elif data.status_code == 500:
         log.error("Internal server error: %s", data.text)
     else:
         log.error(f"Unknown error in user requests: {data.status_code} - {data.text}")
+    return False
 
 
 # TODO: CHECK THIS UTILS
