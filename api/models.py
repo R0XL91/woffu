@@ -139,4 +139,10 @@ def process_company_users(sender, instance, created, **kwargs):
     if created:
         get_company_users(company=instance)
         get_calendar_events(company=instance)
-        get_users_requests(company=instance)
+
+
+@receiver(post_save, sender=WoffuUser)
+def process_user_requests(sender, instance, created, **kwargs):
+    from api.utils import get_user_requests
+    if created:
+        get_user_requests(woffu_user=instance)

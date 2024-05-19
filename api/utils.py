@@ -46,6 +46,8 @@ def get_company_users(company: Company, show_hidden_users: bool = False) -> bool
         log.error("Error getting company users: %s", data.text)
     elif data.status_code == 500:
         log.error("Error getting company users: %s", data.text)
+    else:
+        log.error(f"Unknown error in user requests changes: {data.status_code} - {data.text}")
     return False
 
 
@@ -88,10 +90,18 @@ def get_calendar_events(company: Company, calendar_id: int = None) -> None:
             CalendarEvent.objects.filter(calendar_id=calendar).exclude(
                 date__in=dates
             ).delete()
+        elif data.status_code == 400:
+            log.error("Bad request getting calendar events: %s", data.text)
+        elif data.status_code == 404:
+            log.error("Calendar not found")
+        elif data.status_code == 500:
+            log.error("Internal server error: %s", data.text)
+        else:
+            log.error(f"Unknown error in calendar events: {data.status_code} - {data.text}")
 
 
 @check_valid_token
-def get_users_requests(company: Company) -> None:
+def get_users_requests(company: Company) -> bool:
     """
     Retrieves user requests from the Woffu API for a given company.
 
@@ -119,6 +129,14 @@ def get_users_requests(company: Company) -> None:
                     init_date=init_date,
                     end_date=end_date,
                 )
+        return True
+    elif data.status_code == 400:
+        log.error("Bad request getting user requests: %s", data.text)
+    elif data.status_code == 500:
+        log.error("Internal server error: %s", data.text)
+    else:
+        log.error(f"Unknown error in user requests: {data.status_code} - {data.text}")
+    return False
 
 
 @check_valid_token
@@ -134,14 +152,16 @@ def get_user_request(woffu_user: WoffuUser, to_date: datetime.date = None) -> No
         None
     """
     init_date = woffu_user.updated_at
-    if to_date and to_date < init_date:
+    if init_date and to_date and to_date < init_date:
         return
-    url = f"{BASE_URL}/api/v1/{woffu_user.woffu_id}/requests"
+    url = f"{BASE_URL}/api/v1/users/{woffu_user.woffu_id}/requests"
     headers = {
         "Authorization": "Bearer " + woffu_user.company.token,
         "Content-Type": "application/json",
     }
-    data = {"fromDate": init_date.isoformat()}
+    data = {}
+    if init_date:
+        data["fromDate"] = init_date.isoformat()
     if to_date:
         data["toDate"] = to_date.isoformat()
     data = requests.get(url=url, headers=headers, timeout=10)
@@ -152,30 +172,30 @@ def get_user_request(woffu_user: WoffuUser, to_date: datetime.date = None) -> No
         for user_request in data.json()["Views"]:
             deleted = user_request.get("Deleted", None)
             updated_on = user_request.get("UpdatedOn", None)
+            init_date = datetime.datetime.strptime(user_request["StartDate"], "%Y-%m-%dT%H:%M:%S.000").date()
+            end_date = datetime.datetime.strptime(user_request["EndDate"], "%Y-%m-%dT%H:%M:%S.000").date()
             if deleted:
                 UserRequest.objects.get(id=user_request["RequestId"]).delete()
             elif not deleted and updated_on:
                 UserRequest.objects.filter(
                     id=user_request["RequestId"]
                 ).update(
-                    init_date=user_request["StartDate"],
-                    end_date=user_request["EndDate"],
+                    init_date=init_date, end_date=end_date,
                 )
             else:
-                woffu_user = WoffuUser.objects.get(woffu_id=user_request["UserId"])
-                UserRequest.objects.create(
-                    id=user_request["RequestId"],
-                    woffu_user=woffu_user,
-                    init_date=user_request["StartDate"],
-                    end_date=user_request["EndDate"],
-                )
+                if not UserRequest.objects.filter(id=user_request["RequestId"]).exists():
+                    UserRequest.objects.create(
+                        id=user_request["RequestId"], woffu_user=woffu_user,
+                        init_date=init_date, end_date=end_date,
+                    )
         woffu_user.updated_at = datetime.datetime.now().date()
-    elif data.status_code == 400:
-        log.error("Error getting requests changes: %s", data.text)
     elif data.status_code == 500:
-        log.error("Error getting requests changes: %s", data.text)
+        log.error("Internal server error: %s", data.text)
+    else:
+        log.error(f"Unknown error in user requests: {data.status_code} - {data.text}")
 
 
+# TODO: CHECK THIS UTILS
 @check_valid_token
 def get_requests_changes(company: Company, to_date: datetime.date = None) -> None:
     """
